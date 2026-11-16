@@ -128,7 +128,13 @@ h1, h2, p { margin: 0; }
 .steps b { font: 500 12.5px var(--mono); letter-spacing: .04em; }
 
 .items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.items:empty::before { content: "Henüz bir şey alınmadı."; font-size: 14px; color: var(--muted); }
+.items:empty::before { content: var(--empty-items, ""); font-size: 14px; color: var(--muted); }
+.lang {
+  margin-left: auto; min-width: 44px; min-height: 36px; padding: 0 10px; align-self: center;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface);
+  font: 500 12px/1 var(--mono); letter-spacing: .1em;
+}
+.lang:hover { border-color: var(--ink); }
 .item {
   display: flex; align-items: center; gap: 12px; padding: 8px 6px 8px 8px;
   background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r);
@@ -210,6 +216,14 @@ h1, h2, p { margin: 0; }
 .stage-send .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stage-send .btn { border-color: #111; color: #111; }
 .stage-send .btn-ink, .stage-send .btn:hover { background: #111; color: #fff; }
+
+.swap {
+  min-height: 42px; padding: 0 12px; border: 1px dashed #111; border-radius: var(--r); background: transparent; color: #111;
+  font: 500 12px/1 var(--mono); letter-spacing: .07em;
+}
+.swap:hover { border-style: solid; background: #111; color: #fff; }
+.swap-dark { border-color: rgba(255, 255, 255, .6); color: #fff; }
+.swap-dark:hover { background: #fff; color: #111; }
 
 /* alan: kamera */
 .stage-recv { background: #000; color: #fff; overflow: hidden; }

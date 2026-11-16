@@ -1,8 +1,10 @@
-/* QR Aktar — ekrandan kameraya, ağsız dosya aktarımı. */
+/* QRDrop — ekrandan kameraya, ağsız dosya aktarımı / screen-to-camera transfer with no network. */
 (() => {
 'use strict';
 
 const Q = window.QRA;
+const L = window.I18N;
+const t = L.t;
 const DENSITY = { kolay: 280, normal: 520, hizli: 800 };
 const MAX_BYTES = 8 * 1024 * 1024;
 const SHRINK_SIDE = 1280;
@@ -26,46 +28,47 @@ const icon = name => {
   s.appendChild(u);
   return s;
 };
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 const rid = () => crypto.getRandomValues(new Uint32Array(1))[0];
 
-/* ---------- tercihler ---------- */
+/* ---------- tercihler / preferences ---------- */
 const prefs = (() => {
-  const d = { density: 'normal', fps: '8', shrink: '1' };
-  try { return Object.assign(d, JSON.parse(localStorage.getItem('qra.prefs') || '{}')); } catch { return d; }
+  const d = { density: 'normal', fps: '8', shrink: '1', lang: L.lang };
+  try { return Object.assign(d, JSON.parse(localStorage.getItem('qrdrop.prefs') || '{}')); } catch { return d; }
 })();
-const savePrefs = () => { try { localStorage.setItem('qra.prefs', JSON.stringify(prefs)); } catch { /* özel sekme */ } };
+const savePrefs = () => { try { localStorage.setItem('qrdrop.prefs', JSON.stringify(prefs)); } catch { /* özel sekme */ } };
 
-/* ---------- biçimleme ---------- */
+/* ---------- biçimleme / formatting ---------- */
+const dec1 = s => (L.lang === 'tr' ? s.replace('.', ',') : s);
 function fmtSize(n) {
   const u = ['B', 'KB', 'MB', 'GB'];
   let i = 0;
   while (n >= 1024 && i < 3) { n /= 1024; i++; }
-  return (i ? n.toFixed(n < 10 ? 1 : 0).replace('.', ',') : String(n)) + ' ' + u[i];
+  return (i ? dec1(n.toFixed(n < 10 ? 1 : 0)) : String(n)) + ' ' + u[i];
 }
 function fmtTime(sec) {
   sec = Math.max(1, Math.round(sec));
-  if (sec < 60) return sec + ' sn';
+  if (sec < 60) return sec + ' ' + t('sec');
   const m = Math.floor(sec / 60), s = sec % 60;
-  return m + ' dk' + (s ? ' ' + s + ' sn' : '');
+  return m + ' ' + t('min') + (s ? ' ' + s + ' ' + t('sec') : '');
 }
+const fmtDate = ts => new Date(ts).toLocaleString(t('locale'), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const extOf = name => {
   const i = name.lastIndexOf('.');
-  return (i > 0 ? name.slice(i + 1) : 'dosya').slice(0, 4).toLocaleUpperCase('tr-TR');
+  return (i > 0 ? name.slice(i + 1) : 'file').slice(0, 4).toLocaleUpperCase(t('locale'));
 };
 const isText = mime => /^text\/plain/.test(mime);
 const isImage = mime => /^image\//.test(mime);
 function toast(text, ms = 3000) {
-  const t = el('div', 'toast', text);
-  $('#toasts').append(t);
-  setTimeout(() => t.remove(), ms);
+  const n = el('div', 'toast', text);
+  $('#toasts').append(n);
+  setTimeout(() => n.remove(), ms);
 }
 
-/* ---------- kayıt (gelenler) ---------- */
+/* ---------- kayıt / storage ---------- */
 const db = (() => {
   let opening;
   const open = () => opening || (opening = new Promise((res, rej) => {
-    const r = indexedDB.open('qr-aktar', 1);
+    const r = indexedDB.open('qrdrop', 1);
     r.onupgradeneeded = () => r.result.createObjectStore('items', { keyPath: 'id' });
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -73,10 +76,10 @@ const db = (() => {
   const run = async (mode, fn) => {
     const d = await open();
     return new Promise((res, rej) => {
-      const t = d.transaction('items', mode);
-      const rq = fn(t.objectStore('items'));
-      t.oncomplete = () => res(rq && rq.result);
-      t.onerror = t.onabort = () => rej(t.error);
+      const tx = d.transaction('items', mode);
+      const rq = fn(tx.objectStore('items'));
+      tx.oncomplete = () => res(rq && rq.result);
+      tx.onerror = tx.onabort = () => rej(tx.error);
     });
   };
   return {
@@ -86,7 +89,7 @@ const db = (() => {
   };
 })();
 
-/* ---------- ekran açık kalsın ---------- */
+/* ---------- ekran açık kalsın / keep screen on ---------- */
 let wake = null;
 async function keepAwake(on) {
   try {
@@ -100,7 +103,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && (current === 'send' || current === 'recv')) keepAwake(true);
 });
 
-/* ---------- görünümler ---------- */
+/* ---------- görünümler / views ---------- */
 let current = 'home';
 function show(name, push = true) {
   if (current === 'send' && name !== 'send') stopSending();
@@ -118,7 +121,19 @@ function goHome() {
   else show('home', false);
 }
 
-/* ---------- seçmeli düğmeler ---------- */
+/* ---------- dil / language ---------- */
+function applyLang() {
+  L.setLang(prefs.lang);
+  for (const b of $$('[data-lang]')) b.textContent = t('lang');
+  $('#offline-state').lastElementChild.textContent = t(swState);
+  renderEstimate();
+  if (current === 'home') renderItems();
+  if (current === 'send') { $('#pause').textContent = t(flow.paused ? 'resume' : 'pause'); tick(true); }
+  if (current === 'recv') { recvHint(t(recv.hintKey), recv.hintWarn); if (recv.dec && recv.dec.info().K) renderRecv(); else $('#recv-detail').textContent = t('waiting'); }
+  if (current === 'done' && openItem.last) openItem(openItem.last, openItem.lastFresh, true);
+}
+
+/* ---------- seçmeli düğmeler / segmented controls ---------- */
 function syncSegs() {
   for (const seg of $$('.seg')) {
     const key = seg.dataset.pref;
@@ -142,14 +157,15 @@ function onPrefChange(key, live) {
   else renderEstimate();
   if (!live || current !== 'send') return;
   if (key === 'fps') restartTimer();
-  if (key === 'density') { startSending(true); toast('Yoğunluk değişti; alan telefon baştan başlar.'); }
+  if (key === 'density') { startSending(true); toast(t('densityChanged')); }
 }
 
-/* ======================= GÖNDERME ======================= */
-const send = { kind: null, file: null, text: '', packed: null, name: '', mime: '', token: 0, previewUrl: null, busy: false };
+/* ======================= GÖNDERME / SEND ======================= */
+const send = { kind: null, file: null, text: '', packed: null, name: '', mime: '', token: 0, previewUrl: null, busy: false, tooBig: false };
 
 function clearChoice() {
-  send.kind = null; send.file = null; send.packed = null;
+  send.kind = null; send.file = null; send.packed = null; send.tooBig = false;
+  send.token++;
   if (send.previewUrl) { URL.revokeObjectURL(send.previewUrl); send.previewUrl = null; }
   $('#chosen').hidden = true;
   $('#opt-shrink').hidden = true;
@@ -163,7 +179,7 @@ function chooseFile(file) {
   send.file = file;
   const img = isImage(file.type);
   $('#chosen').hidden = false;
-  $('#chosen-name').textContent = file.name || 'dosya';
+  $('#chosen-name').textContent = file.name || t('fileName');
   $('#chosen-size').textContent = fmtSize(file.size);
   $('#chosen-ext').textContent = extOf(file.name || '');
   const pic = $('#chosen-img');
@@ -199,26 +215,26 @@ async function shrinkImage(file) {
 async function prepare() {
   const token = ++send.token;
   send.packed = null;
-  renderEstimate();
-  if (!send.kind) return;
+  send.tooBig = false;
+  if (!send.kind) { renderEstimate(); return; }
   send.busy = true;
   renderEstimate();
   let name, mime, bytes;
   try {
     if (send.kind === 'text') {
-      name = 'mesaj.txt';
+      name = t('textName');
       mime = 'text/plain;charset=utf-8';
       bytes = new TextEncoder().encode(send.text);
     } else {
       const f = send.file;
-      name = f.name || 'dosya';
+      name = f.name || t('fileName');
       mime = f.type || 'application/octet-stream';
       let blob = f;
       if (isImage(mime) && prefs.shrink === '1') {
         const small = await shrinkImage(f);
         if (small) { blob = small; mime = 'image/jpeg'; name = name.replace(/\.[^.]*$/, '') + '.jpg'; }
       }
-      if (blob.size > MAX_BYTES) { bytes = null; } else bytes = new Uint8Array(await blob.arrayBuffer());
+      bytes = blob.size > MAX_BYTES ? null : new Uint8Array(await blob.arrayBuffer());
     }
   } catch { bytes = null; }
   if (token !== send.token) return;
@@ -235,24 +251,21 @@ function renderEstimate() {
   const start = $('#start');
   start.disabled = true;
   est.textContent = '';
-  if (!send.kind) { est.textContent = 'Önce bir şey seç.'; return; }
-  if (send.busy) { est.textContent = 'Hazırlanıyor…'; return; }
+  if (!send.kind) { est.textContent = t('pickFirst'); return; }
+  if (send.busy) { est.textContent = t('preparing'); return; }
   if (send.tooBig || !send.packed) {
-    est.append(el('span', 'warn', 'Bu dosya çok büyük. Sınır ' + fmtSize(MAX_BYTES) + '; fotoğrafsa KÜÇÜLT seçeneğini kullan.'));
+    est.append(el('span', 'warn', t('tooBig', { max: fmtSize(MAX_BYTES) })));
     return;
   }
-  const B = DENSITY[prefs.density];
-  const K = Math.ceil(send.packed.length / B);
-  const fps = Number(prefs.fps);
-  const best = K / fps;
-  const real = best * 1.35;  // kaçan kareler ve karışım payı
-  const b = el('b', null, fmtTime(best) + ' – ' + fmtTime(real));
-  est.append('Gönderilecek: ' + fmtSize(send.packed.length) + ' · ' + K + ' parça · süre ≈ ', b);
-  if (real > 180) est.append(el('span', 'warn', ' · uzun sürer, telefonları sabitleyin'));
+  const K = Math.ceil(send.packed.length / DENSITY[prefs.density]);
+  const best = K / Number(prefs.fps);
+  const real = best * 1.35;   // kaçan kareler ve karışım payı / missed frames + coding overhead
+  est.append(t('estimate', { size: fmtSize(send.packed.length), k: K }), el('b', null, fmtTime(best) + ' – ' + fmtTime(real)));
+  if (real > 180) est.append(el('span', 'warn', t('longWarn')));
   start.disabled = false;
 }
 
-/* ---- akış ---- */
+/* ---- akış / stream ---- */
 const flow = { enc: null, timer: 0, shown: 0, paused: false };
 function drawQR(canvas, text) {
   const q = qrcode(0, 'L');
@@ -273,12 +286,14 @@ function drawQR(canvas, text) {
   }
   ctx.putImageData(img, 0, 0);
 }
-function tick() {
-  if (flow.paused || !flow.enc) return;
-  drawQR($('#qr'), flow.enc.next());
-  flow.shown++;
-  const K = flow.enc.K;
-  $('#send-count').textContent = 'kare ' + flow.shown + ' · ' + (flow.shown / K).toFixed(1).replace('.', ',') + ' tur';
+function tick(labelOnly) {
+  if (!flow.enc) return;
+  if (labelOnly !== true) {
+    if (flow.paused) return;
+    drawQR($('#qr'), flow.enc.next());
+    flow.shown++;
+  }
+  $('#send-count').textContent = t('frameCount', { n: flow.shown, r: dec1((flow.shown / flow.enc.K).toFixed(1)) });
 }
 function restartTimer() {
   clearInterval(flow.timer);
@@ -289,7 +304,7 @@ function startSending(restart) {
   flow.enc = new Q.Encoder(send.packed, DENSITY[prefs.density], rid());
   flow.shown = 0;
   flow.paused = false;
-  $('#pause').textContent = 'DURAKLAT';
+  $('#pause').textContent = t('pause');
   $('#send-name').textContent = send.name + ' · ' + fmtSize(send.packed.length);
   if (!restart) show('send');
   syncSegs();
@@ -303,16 +318,18 @@ function stopSending() {
   keepAwake(false);
 }
 
-/* ======================= ALMA ======================= */
-const recv = { active: false, dec: null, cam: null, detector: null, firstAt: 0, lastValid: 0, lastSeen: 0, uiQueued: false, hintTimer: 0, canvas: null };
+/* ======================= ALMA / RECEIVE ======================= */
+const recv = { active: false, dec: null, cam: null, detector: null, firstAt: 0, lastValid: 0, uiQueued: false, hintTimer: 0, canvas: null, hintKey: 'aimHint', hintWarn: false };
 
 function recvHint(text, warn) {
   const h = $('#recv-hint');
   h.textContent = text;
   h.classList.toggle('warn', !!warn);
 }
+function hint(key, warn) { recv.hintKey = key; recv.hintWarn = !!warn; recvHint(t(key), warn); }
 function renderRecv() {
   recv.uiQueued = false;
+  if (!recv.dec) return;
   const i = recv.dec.info();
   if (!i.K) return;
   const p = i.known / i.K;
@@ -320,9 +337,9 @@ function renderRecv() {
   $('#recv-pct').textContent = '%' + Math.floor(p * 100);
   const secs = (performance.now() - recv.firstAt) / 1000;
   const rate = secs > 0.5 ? (i.known * i.B) / secs : 0;
-  let detail = i.known + '/' + i.K + ' parça · ' + fmtSize(i.total);
+  let detail = t('parts', { a: i.known, b: i.K }) + ' · ' + fmtSize(i.total);
   if (rate > 0) {
-    detail += ' · ' + fmtSize(rate) + '/sn';
+    detail += ' · ' + fmtSize(rate) + t('perSec');
     if (i.known < i.K) detail += ' · ≈ ' + fmtTime(((i.K - i.known) * i.B / rate) * 1.2);
   }
   $('#recv-detail').textContent = detail;
@@ -334,21 +351,20 @@ function queueRecvUi() {
 }
 function onText(text) {
   if (!recv.active || !recv.dec) return;
-  recv.lastSeen = performance.now();
   const r = recv.dec.add(text);
-  if (r.status === 'foreign') { recvHint('Bu bir QR Aktar kodu değil. Gönderen ekrana tutun.', true); return; }
+  if (r.status === 'foreign') { hint('foreign', true); return; }
   recv.lastValid = performance.now();
   if (r.status === 'start' || r.status === 'restart') {
     recv.firstAt = performance.now();
-    if (r.status === 'restart') toast('Gönderen ayarı değişti; baştan başlandı.');
+    if (r.status === 'restart') toast(t('restarted'));
   }
-  if (r.status === 'corrupt') { recvHint('Veri bozuk çıktı; baştan alınıyor.', true); return; }
+  if (r.status === 'corrupt') { hint('corrupt', true); return; }
   const stage = $('#v-recv');
   stage.classList.add('hit');
   clearTimeout(recv.flash);
   recv.flash = setTimeout(() => stage.classList.remove('hit'), 160);
   if (r.status === 'done') { queueRecvUi(); finishReceive(r.data); return; }
-  recvHint('Okunuyor. Telefonları sabit tutun.');
+  if (recv.hintKey !== 'reading') hint('reading');
   queueRecvUi();
 }
 
@@ -366,12 +382,12 @@ function decodeImage(source, sw, sh, crop) {
   const r = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
   return r && r.data ? r.data : null;
 }
-// Testler ve ileride başka kaynaklar için: bir resmi doğrudan çözücüye ver.
+// Testler ve başka kaynaklar için: bir resmi doğrudan çözücüye ver. / Feed an image straight to the decoder.
 window.qraFeedImage = source => {
   if (!recv.active) return false;
-  const t = decodeImage(source, source.naturalWidth || source.width, source.naturalHeight || source.height, false);
-  if (t) onText(t);
-  return !!t;
+  const txt = decodeImage(source, source.naturalWidth || source.width, source.naturalHeight || source.height, false);
+  if (txt) onText(txt);
+  return !!txt;
 };
 
 async function startCamera() {
@@ -393,20 +409,20 @@ async function startReceiving() {
   recv.active = true;
   recv.firstAt = 0;
   recv.lastValid = 0;
-  recv.lastSeen = 0;
   $('#recv-bar').style.transform = 'scaleX(0)';
   $('#recv-pct').textContent = '%0';
-  $('#recv-detail').textContent = 'Kod bekleniyor…';
-  recvHint('Kamerayı gönderen ekrana 20–30 cm\'den, karşı karşıya tutun.');
+  $('#recv-detail').textContent = t('waiting');
+  hint('aimHint');
   keepAwake(true);
   const v = $('#cam');
   try {
-    recv.cam = await startCamera();
-    if (!recv.active) { recv.cam.getTracks().forEach(t => t.stop()); recv.cam = null; return; }
-    v.srcObject = recv.cam;
+    const cam = await startCamera();
+    if (!recv.active) { cam.getTracks().forEach(tr => tr.stop()); return; }
+    recv.cam = cam;
+    v.srcObject = cam;
     await v.play().catch(() => {});
   } catch {
-    recvHint('Kamera açılamadı. Tarayıcı ayarlarından bu siteye kamera izni verin.', true);
+    hint('noCam', true);
     return;
   }
   if ('BarcodeDetector' in window) {
@@ -420,11 +436,8 @@ async function startReceiving() {
   recv.hintTimer = setInterval(() => {
     if (!recv.active) return;
     const now = performance.now();
-    if (!recv.lastValid && now - started > 6000) {
-      recvHint('Kod okunamıyor. Mesafeyi 20–30 cm yapın, gönderen ekranın parlaklığını sonuna açın ya da yoğunluğu KOLAY seçin.', true);
-    } else if (recv.lastValid && now - recv.lastValid > 4000) {
-      recvHint('Okuma durdu. Kamerayı yeniden ekrana çevirin.', true);
-    }
+    if (!recv.lastValid && now - started > 6000) hint('cantRead', true);
+    else if (recv.lastValid && now - recv.lastValid > 4000) hint('stalled', true);
   }, 1000);
   scanLoop(v);
 }
@@ -451,7 +464,7 @@ async function scanLoop(v) {
 function stopReceiving() {
   recv.active = false;
   clearInterval(recv.hintTimer);
-  if (recv.cam) { recv.cam.getTracks().forEach(t => t.stop()); recv.cam = null; }
+  if (recv.cam) { recv.cam.getTracks().forEach(tr => tr.stop()); recv.cam = null; }
   $('#cam').srcObject = null;
   keepAwake(false);
 }
@@ -459,58 +472,61 @@ async function finishReceive(data) {
   stopReceiving();
   if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
   const f = Q.unpack(data);
-  if (!f) { toast('Gelen veri açılamadı.'); show('home'); return; }
-  const item = { id: String(Date.now()) + '-' + rid(), name: f.name || 'dosya', mime: f.mime || 'application/octet-stream', size: f.bytes.length, ts: Date.now() };
+  if (!f) { toast(t('badData')); show('home'); return; }
+  const item = { id: String(Date.now()) + '-' + rid(), name: f.name || t('fileName'), mime: f.mime || 'application/octet-stream', size: f.bytes.length, ts: Date.now() };
   item.blob = new Blob([f.bytes], { type: item.mime });
   await db.put(item);
   openItem(item, true);
 }
 
-/* ======================= GELENLER ======================= */
+/* ======================= GELENLER / RECEIVED ======================= */
 const urls = new Map();
 const urlFor = item => {
   if (!urls.has(item.id)) urls.set(item.id, URL.createObjectURL(item.blob));
   return urls.get(item.id);
 };
-function openItem(item, fresh) {
-  show('done', !fresh);
-  $('#done-title').textContent = fresh ? 'ALINDI' : 'GELEN';
+function openItem(item, fresh, relabel) {
+  openItem.last = item;
+  openItem.lastFresh = fresh;
+  if (!relabel) show('done', !fresh);
+  $('#done-title').textContent = t(fresh ? 'doneTitle' : 'itemTitle');
   $('#done-name').textContent = item.name;
-  $('#done-size').textContent = fmtSize(item.size) + ' · ' + new Date(item.ts).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  $('#done-size').textContent = fmtSize(item.size) + ' · ' + fmtDate(item.ts);
   $('#done-ext').textContent = extOf(item.name);
   const view = $('#done-view');
-  view.textContent = '';
-  const url = urlFor(item);
-  if (isImage(item.mime)) {
-    const img = el('img');
-    img.alt = item.name;
-    img.onerror = () => img.remove();
-    img.src = url;
-    view.append(img);
-  } else if (isText(item.mime)) {
-    const pre = el('pre');
-    item.blob.text().then(t => { pre.textContent = t; });
-    view.append(pre);
+  if (!relabel) {
+    view.textContent = '';
+    if (isImage(item.mime)) {
+      const img = el('img');
+      img.alt = item.name;
+      img.onerror = () => img.remove();
+      img.src = urlFor(item);
+      view.append(img);
+    } else if (isText(item.mime)) {
+      const pre = el('pre');
+      item.blob.text().then(x => { pre.textContent = x; });
+      view.append(pre);
+    }
   }
   const acts = $('#done-actions');
   acts.textContent = '';
   if (isText(item.mime)) {
-    const c = el('button', 'btn', 'KOPYALA');
+    const c = el('button', 'btn', t('copy'));
     c.type = 'button';
     c.onclick = async () => {
-      try { await navigator.clipboard.writeText(await item.blob.text()); c.textContent = 'KOPYALANDI'; } catch { c.textContent = 'KOPYALANAMADI'; }
-      setTimeout(() => { c.textContent = 'KOPYALA'; }, 1400);
+      try { await navigator.clipboard.writeText(await item.blob.text()); c.textContent = t('copied'); } catch { c.textContent = t('copyFail'); }
+      setTimeout(() => { c.textContent = t('copy'); }, 1400);
     };
     acts.append(c);
   }
-  const a = el('a', 'btn', 'İNDİR');
-  a.href = url;
+  const a = el('a', 'btn', t('download'));
+  a.href = urlFor(item);
   a.download = item.name;
   acts.append(a);
   try {
     const file = new File([item.blob], item.name, { type: item.mime });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      const s = el('button', 'btn', isImage(item.mime) ? 'GALERİYE KAYDET' : 'PAYLAŞ');
+      const s = el('button', 'btn', t(isImage(item.mime) ? 'saveGallery' : 'share'));
       s.type = 'button';
       s.onclick = () => navigator.share({ files: [file] }).catch(() => {});
       acts.append(s);
@@ -526,21 +542,21 @@ async function renderItems() {
     const open = el('button', 'item-open');
     open.type = 'button';
     if (isImage(item.mime)) {
-      const t = el('img', 'item-thumb');
-      t.alt = '';
-      t.src = urlFor(item);
-      open.append(t);
+      const th = el('img', 'item-thumb');
+      th.alt = '';
+      th.src = urlFor(item);
+      open.append(th);
     } else open.append(el('span', 'ext', extOf(item.name)));
     const info = el('div', 'chosen-info');
-    info.append(el('div', 'chosen-name', item.name), el('div', 'chosen-size', fmtSize(item.size) + ' · ' + new Date(item.ts).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })));
+    info.append(el('div', 'chosen-name', item.name), el('div', 'chosen-size', fmtSize(item.size) + ' · ' + fmtDate(item.ts)));
     open.append(info);
     open.onclick = () => openItem(item, false);
     const del = el('button', 'icon-btn');
     del.type = 'button';
-    del.setAttribute('aria-label', item.name + ' sil');
+    del.setAttribute('aria-label', t('del') + ': ' + item.name);
     del.append(icon('trash'));
     del.onclick = async () => {
-      if (!confirm(item.name + ' silinsin mi?')) return;
+      if (!confirm(t('confirmDel', { name: item.name }))) return;
       await db.del(item.id);
       if (urls.has(item.id)) { URL.revokeObjectURL(urls.get(item.id)); urls.delete(item.id); }
       renderItems();
@@ -550,23 +566,28 @@ async function renderItems() {
   }
 }
 
-/* ======================= BAŞLANGIÇ ======================= */
+/* ======================= BAŞLANGIÇ / START ======================= */
+let swState = 'offlinePrep';
 async function registerSW() {
   const st = $('#offline-state');
-  const txt = st.lastElementChild;
-  if (!('serviceWorker' in navigator)) { txt.textContent = 'Bu tarayıcıda çevrimdışı kurulum yok.'; return; }
+  const set = key => { swState = key; st.lastElementChild.textContent = t(key); };
+  if (!('serviceWorker' in navigator)) { set('offlineNone'); return; }
   try {
     await navigator.serviceWorker.register('sw.js');
     await navigator.serviceWorker.ready;
     st.classList.add('on');
-    txt.textContent = 'Çevrimdışı kullanıma hazır';
+    set('offlineReady');
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  } catch { txt.textContent = 'Çevrimdışı kurulum yapılamadı.'; }
+  } catch { set('offlineFail'); }
 }
 
 function init() {
   wireSegs();
   syncSegs();
+  applyLang();
+  for (const b of $$('[data-lang]')) {
+    b.onclick = () => { prefs.lang = L.lang === 'tr' ? 'en' : 'tr'; savePrefs(); applyLang(); };
+  }
   $('#go-send').onclick = () => { show('setup'); renderEstimate(); };
   $('#go-recv').onclick = startReceiving;
   for (const b of $$('[data-home]')) b.onclick = goHome;
@@ -581,9 +602,12 @@ function init() {
   $('#start').onclick = () => startSending(false);
   $('#pause').onclick = () => {
     flow.paused = !flow.paused;
-    $('#pause').textContent = flow.paused ? 'DEVAM' : 'DURAKLAT';
+    $('#pause').textContent = t(flow.paused ? 'resume' : 'pause');
   };
   $('#stop').onclick = () => show('setup', false);
+  // Rol değişimi: kamerası uygun olan telefon alıcı olabilsin. / Swap roles in one tap.
+  $('#swap-to-recv').onclick = () => { stopSending(); startReceiving(); toast(t('swappedRecv')); };
+  $('#swap-to-send').onclick = () => { show('setup'); renderEstimate(); toast(t('swappedSend')); };
 
   let installEvt = null;
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#install').hidden = false; });

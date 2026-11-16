@@ -1,8 +1,7 @@
 {
-  "name": "QR Aktar",
-  "short_name": "QR Aktar",
-  "description": "Ağ, hotspot ya da Bluetooth olmadan; yalnızca ekran ve kamerayla dosya ve fotoğraf aktarımı.",
-  "lang": "tr",
+  "name": "QRDrop",
+  "short_name": "QRDrop",
+  "description": "File, photo and text transfer with no network, hotspot or Bluetooth — just a screen and a camera.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
