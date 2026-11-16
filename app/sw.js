@@ -1,9 +1,10 @@
-/* QR Aktar service worker: uygulamayı cihaza kaydeder, internet olmadan açılmasını sağlar. */
-const VERSION = 'qra-v1';
+/* QRDrop service worker: uygulamayı cihaza kaydeder, internetsiz açılmasını sağlar. / Caches the app for offline use. */
+const VERSION = 'qrdrop-v1';
 const ASSETS = [
   './',
   'index.html',
   'style.css',
+  'i18n.js',
   'core.js',
   'app.js',
   'manifest.webmanifest',

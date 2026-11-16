@@ -1,4 +1,4 @@
-﻿/* QR Aktar'ı bu bilgisayarda açmak için küçük yerel sunucu (yalnızca 127.0.0.1).
+/* QRDrop'ı bu bilgisayarda açmak için küçük yerel sunucu (yalnızca 127.0.0.1).
    Kullanım: node tools/serve.js [--open] */
 'use strict';
 const http = require('http');
@@ -43,11 +43,11 @@ const server = http.createServer((req, res) => {
 });
 
 server.on('error', err => {
-  if (err.code === 'EADDRINUSE') { console.log('QR Aktar zaten açık: ' + URL_); openBrowser(); return; }
+  if (err.code === 'EADDRINUSE') { console.log('QRDrop zaten açık: ' + URL_); openBrowser(); return; }
   throw err;
 });
 server.listen(PORT, '127.0.0.1', () => {
-  console.log('QR Aktar bu bilgisayarda hazır: ' + URL_);
+  console.log('QRDrop bu bilgisayarda hazır: ' + URL_);
   console.log('Kapatmak için bu pencereyi kapatın.');
   openBrowser();
 });

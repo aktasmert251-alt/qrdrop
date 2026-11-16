@@ -1,35 +1,70 @@
-# QR Aktar
+# QRDrop
 
-Ağ, hotspot ya da Bluetooth olmadan dosya, fotoğraf ve metin aktarımı. Gönderen telefonun ekranı hızla değişen QR kodlar gösterir; alan telefon kamerasıyla bu kodları okuyup dosyayı birleştirir. İki cihaz arasında hiçbir bağlantı kurulmaz: veri ışıkla, ekrandan kameraya geçer.
+**English** · [Türkçe](#türkçe)
 
-## Kullanım
+Send files, photos and text between two phones with **no network at all** — no Wi‑Fi, no hotspot, no Bluetooth, no internet. The sending phone shows a fast stream of QR codes; the receiving phone reads them with its camera and rebuilds the file. Data travels as light, from screen to camera.
+
+**Live:** https://aktasmert251-alt.github.io/qrdrop/ · Interface in English and Turkish.
+
+## How to use
+
+1. Sender taps **SEND**, picks a photo, file or text, and taps **START**.
+2. Receiver taps **RECEIVE** and holds the camera 20–30 cm from the sending screen.
+3. At 100% the file is saved on the receiving phone; the sender taps **FINISH**.
+
+Either phone can switch roles at any time with **⇄ SWAP ROLES**, so whichever phone has the better camera can be the receiver.
+
+Missed frames don't matter: the stream uses fountain (LT) coding, so the receiver can rebuild the file from any large enough set of frames, even if it starts late. The whole file is checked with CRC32.
+
+## Speed
+
+About 2–6 KB/s. A shrunk photo (≈60–150 KB) takes 15–60 seconds. Not meant for large files; the limit is 8 MB.
+
+| Density | Data per frame | QR version |
+|---|---|---|
+| EASY | 280 B | 11 |
+| NORMAL | 520 B | 16 |
+| FAST | 800 B | 20 |
+
+## Install
+
+Open the live address once while online and add it to the home screen (Android: Chrome → Install app; iPhone: Safari → Share → Add to Home Screen). After that it works fully offline.
+
+---
+
+## Türkçe
+
+İki telefon arasında **hiçbir ağ olmadan** dosya, fotoğraf ve metin gönderin: Wi‑Fi, hotspot, Bluetooth ya da internet gerekmez. Gönderen telefon ekranında hızla değişen QR kodlar gösterir; alan telefon kamerasıyla bunları okuyup dosyayı birleştirir. Veri ışıkla, ekrandan kameraya geçer.
+
+**Adres:** https://aktasmert251-alt.github.io/qrdrop/ · Arayüz Türkçe ve İngilizce.
+
+### Kullanım
 
 1. Gönderen **GÖNDER**'e basar, fotoğraf, dosya ya da metin seçer, **BAŞLAT**'a basar.
 2. Alan **AL**'a basar ve kamerasını gönderen ekrana 20–30 cm'den tutar.
 3. Çubuk %100 olunca dosya alan telefona kaydedilir; gönderen **BİTİR**'e basar.
 
-Kaçan kareler sorun değildir: akış "fountain" kodlamayla üretilir, alan taraf hangi kareleri görürse görsün yeterli sayıda kareden sonra dosyayı çözer. Her kare ve dosyanın bütünü sağlama (CRC32) ile denetlenir.
+İki telefon da **⇄ ROLÜ DEĞİŞ** ile istediği an rol değiştirebilir; kamerası iyi olan telefon alıcı olur.
 
-## Hız
+Kaçan kareler sorun değildir: akış "fountain" (LT) kodlamayla üretilir, alan taraf geç başlasa bile yeterli sayıda kareden dosyayı çözer. Dosyanın bütünü CRC32 ile denetlenir.
+
+### Hız
 
 Yaklaşık 2–6 KB/sn. Küçültülmüş bir fotoğraf (≈60–150 KB) 15–60 saniyede gider. Büyük dosyalar için uygun değildir; sınır 8 MB.
 
-| Yoğunluk | Kare başına veri | QR boyutu |
-|---|---|---|
-| KOLAY | 280 B | sürüm 11 |
-| NORMAL | 520 B | sürüm 16 |
-| HIZLI | 800 B | sürüm 20 |
+### Kurulum
 
-## Kurulum
+Adresi internet varken bir kez açıp ana ekrana ekleyin (Android: Chrome → Uygulamayı yükle; iPhone: Safari → Paylaş → Ana Ekrana Ekle). Sonrasında tamamen internetsiz çalışır.
 
-`app/` klasörü HTTPS bir adreste (ör. GitHub Pages) yayınlanır. Telefon adresi internet varken bir kez açıp ana ekrana ekler; sonrasında internetsiz çalışır.
+---
 
-## Yapı
+## Project layout / Yapı
 
-- `app/core.js` — Base45, CRC32, paketleme, LT (fountain) kodlayıcı ve çözücü; tarayıcıda ve Node'da çalışır
-- `app/app.js` — arayüz, kamera, QR çizimi ve okuma
-- `test/core.test.js` — çekirdek testleri (`node test/core.test.js`)
-- `test/e2e.js` — iki sanal telefonla tarayıcı testi
-- `tools/serve.js` — bilgisayarda açmak için yerel sunucu
+- `app/core.js` — Base45, CRC32, packing, LT encoder/decoder (browser + Node)
+- `app/app.js` — UI, camera, QR drawing and reading
+- `app/i18n.js` — English and Turkish strings
+- `test/core.test.js` — core tests (`node test/core.test.js`)
+- `test/e2e.js` — two-phone browser test (Playwright)
+- `tools/serve.js` — local server for desktop use
 
-Kullanılan açık kaynak parçalar: qrcode-generator (MIT), jsQR (Apache-2.0), IBM Plex (OFL).
+Open-source parts: qrcode-generator (MIT), jsQR (Apache-2.0), IBM Plex (OFL).

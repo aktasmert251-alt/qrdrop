@@ -13,7 +13,7 @@ let fails = 0;
 const ok = (name, cond, extra) => { console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra ? ' — ' + extra : '')); if (!cond) fails++; };
 
 async function phone(browser, dark) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: dark ? 'dark' : 'light', permissions: ['camera'] });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: dark ? 'dark' : 'light', permissions: ['camera'], locale: 'tr-TR' });
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -113,9 +113,39 @@ async function pump(S, R, untilDone, maxMs) {
   p = await pump(S, R, true, 60000);
   ok('Yoğunluk değişince yine tamamlanır', !(await R.page.isHidden('#v-done')), `${p.fed} kare`);
 
-  // 5) Gelenler listesi ve çevrimdışı açılış
-  await R.page.click('#v-done [data-home]');
+  // 5) Rol değişimi: alan telefon gönderen olur, gönderen alan olur, ters yönde aktarım
+  await R.page.click('#again');
+  await R.page.waitForSelector('#v-recv:not([hidden])');
+  await R.page.screenshot({ path: path.join(OUT, '09-recv-swap.png') });
+  await R.page.click('#swap-to-send');
+  await R.page.waitForSelector('#v-setup:not([hidden])');
+  await S.page.click('#swap-to-recv');
+  await S.page.waitForSelector('#v-recv:not([hidden])');
+  ok('Rol değişimi: kamera kapandı/açıldı doğru ekranlar', !(await S.page.isHidden('#v-recv')) && !(await R.page.isHidden('#v-setup')));
+  await R.page.fill('#send-text', 'Ters yönden selam');
+  await R.page.waitForSelector('#start:not([disabled])');
+  await R.page.click('#start');
+  p = await pump(R, S, true, 30000);
+  ok('Ters yönde aktarım', (await S.page.textContent('#done-view pre')).includes('Ters yönden'), `${p.fed} kare`);
+  await R.page.click('#stop');
+  await R.page.click('#v-setup [data-home]');
   await R.page.waitForSelector('#v-home:not([hidden])');
+
+  // 6) Dil değişimi
+  await R.page.click('#v-home [data-lang]');
+  ok('İngilizceye geçiyor', (await R.page.textContent('.hero')).startsWith('Two phones') && (await R.page.getAttribute('html', 'lang')) === 'en');
+  await R.page.screenshot({ path: path.join(OUT, '10-home-en-dark.png') });
+  await S.page.click('#v-done [data-home]');
+  await S.page.click('#go-send');
+  await S.page.click('#v-setup [data-lang]');
+  await S.page.fill('#send-text', 'hello');
+  await S.page.waitForSelector('#start:not([disabled])');
+  ok('İngilizce süre tahmini', /parts · time/.test(await S.page.textContent('#estimate')));
+  await S.page.screenshot({ path: path.join(OUT, '11-setup-en.png') });
+  await R.page.click('#v-home [data-lang]');
+  ok('Türkçeye geri dönüyor', (await R.page.textContent('.hero')).startsWith('İki telefon'));
+
+  // 7) Gelenler listesi ve çevrimdışı açılış
   const n = await R.page.locator('.item').count();
   ok('Gelenler listesinde 4 öğe', n === 4, String(n));
   await R.page.screenshot({ path: path.join(OUT, '08-home-items-dark.png') });
