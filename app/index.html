@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
+<title>QR Aktar</title>
+<meta name="description" content="Ağ, hotspot ya da Bluetooth olmadan; yalnızca ekran ve kamerayla dosya ve fotoğraf aktarımı.">
+<meta name="theme-color" content="#EDE9DE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131410" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="QR Aktar">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+</svg>
+
+<!-- ANA SAYFA -->
+<main class="view page" id="v-home">
+  <header class="top">
+    <div class="mark"><span class="mark-name">QR AKTAR</span><span class="mark-sub">ağ yok · hotspot yok · sadece ekran ve kamera</span></div>
+  </header>
+
+  <h1 class="hero">İki telefon. Bir ekran, bir kamera. Arada hiçbir ağ yok.</h1>
+
+  <div class="modes">
+    <button class="mode" id="go-send" type="button">
+      <span class="mode-t">GÖNDER</span>
+      <span class="mode-d">Bu ekran hızla değişen kodlar gösterir.</span>
+    </button>
+    <button class="mode mode-alt" id="go-recv" type="button">
+      <span class="mode-t">AL</span>
+      <span class="mode-d">Kamera karşı ekrandaki kodları okur.</span>
+    </button>
+  </div>
+
+  <section class="block">
+    <h2 class="label">Nasıl çalışır</h2>
+    <ol class="steps">
+      <li>Gönderen fotoğraf, dosya ya da metin seçip <b>BAŞLAT</b>'a basar; ekranda kodlar akmaya başlar.</li>
+      <li>Alan <b>AL</b>'a basıp kamerasını o ekrana 20–30 cm'den tutar.</li>
+      <li>Çubuk %100 olunca dosya alan telefona kaydedilir. Kaçan kareler sorun değil; akış hepsini telafi eder.</li>
+    </ol>
+  </section>
+
+  <section class="block">
+    <h2 class="label">Gelenler</h2>
+    <ul class="items" id="items"></ul>
+  </section>
+
+  <footer class="foot-note">
+    <p class="state" id="offline-state"><i class="led"></i><span>Çevrimdışı kullanım hazırlanıyor…</span></p>
+    <button class="btn btn-sm" id="install" type="button" hidden>UYGULAMA OLARAK KUR</button>
+    <p class="note" id="ios-hint" hidden>iPhone'da kurmak için: Safari'de Paylaş → “Ana Ekrana Ekle”.</p>
+  </footer>
+</main>
+
+<!-- GÖNDERME HAZIRLIĞI -->
+<main class="view page" id="v-setup" hidden>
+  <header class="top">
+    <button class="icon-btn" data-home type="button" aria-label="Geri"><svg class="ic"><use href="#i-back"/></svg></button>
+    <span class="top-title">GÖNDER</span>
+  </header>
+
+  <section class="block">
+    <h2 class="label">Ne gönderilecek</h2>
+    <div class="pickers">
+      <button class="pick" id="pick-photo-btn" type="button"><svg class="ic"><use href="#i-photo"/></svg>FOTOĞRAF</button>
+      <button class="pick" id="pick-file-btn" type="button"><svg class="ic"><use href="#i-file"/></svg>DOSYA</button>
+    </div>
+    <input type="file" id="pick-photo" accept="image/*" hidden>
+    <input type="file" id="pick-file" hidden>
+    <textarea id="send-text" rows="3" maxlength="20000" placeholder="…ya da buraya bir metin yaz"></textarea>
+  </section>
+
+  <section class="chosen" id="chosen" hidden>
+    <img class="chosen-img" id="chosen-img" alt="" hidden>
+    <div class="chosen-row">
+      <span class="ext" id="chosen-ext"></span>
+      <div class="chosen-info"><div class="chosen-name" id="chosen-name"></div><div class="chosen-size" id="chosen-size"></div></div>
+      <button class="icon-btn" id="chosen-clear" type="button" aria-label="Seçimi kaldır"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+  </section>
+
+  <section class="block" id="opt-shrink" hidden>
+    <h2 class="label">Fotoğraf boyutu</h2>
+    <div class="seg" data-pref="shrink">
+      <button type="button" data-v="1">KÜÇÜLT<small>hızlı</small></button>
+      <button type="button" data-v="0">ORİJİNAL<small>yavaş</small></button>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 class="label">Kod yoğunluğu</h2>
+    <div class="seg" data-pref="density">
+      <button type="button" data-v="kolay">KOLAY<small>zor koşul</small></button>
+      <button type="button" data-v="normal">NORMAL<small>önerilen</small></button>
+      <button type="button" data-v="hizli">HIZLI<small>iyi kamera</small></button>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 class="label">Akış hızı</h2>
+    <div class="seg" data-pref="fps">
+      <button type="button" data-v="5">5<small>kare/sn</small></button>
+      <button type="button" data-v="8">8<small>kare/sn</small></button>
+      <button type="button" data-v="12">12<small>kare/sn</small></button>
+    </div>
+  </section>
+
+  <div class="go">
+    <p class="estimate" id="estimate">Önce bir şey seç.</p>
+    <button class="btn btn-accent btn-wide btn-lg" id="start" type="button" disabled>BAŞLAT</button>
+  </div>
+</main>
+
+<!-- GÖNDERİLİYOR -->
+<section class="view stage stage-send" id="v-send" hidden>
+  <header class="send-top">
+    <span class="send-name" id="send-name"></span>
+    <span class="send-count" id="send-count"></span>
+  </header>
+  <div class="qr-wrap"><canvas id="qr" width="21" height="21" aria-label="Akan kod"></canvas></div>
+  <div class="send-ctrl">
+    <p class="send-hint" id="send-hint">Alan telefonda çubuk %100 olunca <b>BİTİR</b>'e basın.</p>
+    <div class="seg seg-sm" data-pref="density" data-live>
+      <button type="button" data-v="kolay">KOLAY</button>
+      <button type="button" data-v="normal">NORMAL</button>
+      <button type="button" data-v="hizli">HIZLI</button>
+    </div>
+    <div class="seg seg-sm" data-pref="fps" data-live>
+      <button type="button" data-v="5">5/sn</button>
+      <button type="button" data-v="8">8/sn</button>
+      <button type="button" data-v="12">12/sn</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="pause" type="button">DURAKLAT</button>
+      <button class="btn btn-ink" id="stop" type="button">BİTİR</button>
+    </div>
+  </div>
+</section>
+
+<!-- ALINIYOR -->
+<section class="view stage stage-recv" id="v-recv" hidden>
+  <video id="cam" playsinline muted></video>
+  <i class="aim" aria-hidden="true"></i>
+  <button class="icon-btn recv-x" data-home type="button" aria-label="İptal"><svg class="ic"><use href="#i-close"/></svg></button>
+  <div class="recv-panel">
+    <div class="recv-line"><span id="recv-pct">%0</span><span id="recv-detail">Kod bekleniyor…</span></div>
+    <div class="bar"><i id="recv-bar"></i></div>
+    <p class="recv-hint" id="recv-hint">Kamerayı gönderen ekrana 20–30 cm'den, karşı karşıya tutun.</p>
+  </div>
+</section>
+
+<!-- TAMAMLANDI / GELEN -->
+<main class="view page" id="v-done" hidden>
+  <header class="top">
+    <button class="icon-btn" data-home type="button" aria-label="Geri"><svg class="ic"><use href="#i-back"/></svg></button>
+    <span class="top-title" id="done-title">ALINDI</span>
+  </header>
+  <div class="done-view" id="done-view"></div>
+  <div class="chosen-row done-row">
+    <span class="ext" id="done-ext"></span>
+    <div class="chosen-info"><div class="chosen-name" id="done-name"></div><div class="chosen-size" id="done-size"></div></div>
+  </div>
+  <div class="done-actions" id="done-actions"></div>
+  <button class="btn btn-accent btn-wide btn-lg" id="again" type="button">YENİ AL</button>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
