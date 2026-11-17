@@ -253,6 +253,7 @@ function renderEstimate() {
   est.textContent = '';
   if (!send.kind) { est.textContent = t('pickFirst'); return; }
   if (send.busy) { est.textContent = t('preparing'); return; }
+  $('#start-scan').disabled = true;
   if (send.tooBig || !send.packed) {
     est.append(el('span', 'warn', t('tooBig', { max: fmtSize(MAX_BYTES) })));
     return;
@@ -263,13 +264,14 @@ function renderEstimate() {
   est.append(t('estimate', { size: fmtSize(send.packed.length), k: K }), el('b', null, fmtTime(best) + ' – ' + fmtTime(real)));
   if (real > 180) est.append(el('span', 'warn', t('longWarn')));
   start.disabled = false;
+  $('#start-scan').disabled = false;
 }
 
 /* ---- akış / stream ---- */
 const flow = { enc: null, timer: 0, shown: 0, paused: false };
-function drawQR(canvas, text) {
-  const q = qrcode(0, 'L');
-  q.addData(text, 'Alphanumeric');
+function drawQR(canvas, text, mode = 'Alphanumeric', level = 'L') {
+  const q = qrcode(0, level);
+  q.addData(text, mode);
   q.make();
   const n = q.getModuleCount(), pad = 4, size = n + pad * 2;
   if (canvas.width !== size) { canvas.width = size; canvas.height = size; }
@@ -319,7 +321,7 @@ function stopSending() {
 }
 
 /* ======================= ALMA / RECEIVE ======================= */
-const recv = { active: false, dec: null, cam: null, detector: null, firstAt: 0, lastValid: 0, uiQueued: false, hintTimer: 0, canvas: null, hintKey: 'aimHint', hintWarn: false };
+const recv = { mode: 'data', active: false, dec: null, cam: null, detector: null, firstAt: 0, lastValid: 0, uiQueued: false, hintTimer: 0, canvas: null, hintKey: 'aimHint', hintWarn: false };
 
 function recvHint(text, warn) {
   const h = $('#recv-hint');
@@ -349,8 +351,43 @@ function queueRecvUi() {
   recv.uiQueued = true;
   requestAnimationFrame(renderRecv);
 }
+/* "Bana gönder" kodu: uygulamanın kendi adresi + #send. Normal kamera uygulaması da okuyup açabilir. */
+const reqUrl = () => new URL('./#send', location.href).href;
+function isReqCode(text) {
+  try {
+    const u = new URL(text);
+    const here = location.pathname.replace(/index\.html$/, '');
+    return u.hash === '#send' && u.pathname.replace(/index\.html$/, '') === here;
+  } catch { return false; }
+}
+function showReq(on) {
+  const box = $('#req');
+  if (on) drawQR($('#req-qr'), reqUrl(), 'Byte', 'M');
+  box.hidden = !on;
+}
+function openSendFromReq() {
+  show('setup');
+  renderEstimate();
+  toast(t('reqSeen'), 4000);
+}
+
 function onText(text) {
   if (!recv.active || !recv.dec) return;
+  // Gönderen, alıcının "bana gönder" kodunu okutuyor: görünce akışı başlat.
+  if (recv.mode === 'req') {
+    if (!isReqCode(text)) { hint('scanReqWrong', true); return; }
+    stopReceiving();
+    if (navigator.vibrate) navigator.vibrate(60);
+    startSending(false);
+    toast(t('reqOk'), 4000);
+    return;
+  }
+  if (isReqCode(text)) {
+    if (!$('#req').hidden) return;   // kendi gösterdiğimiz kodu görmeyelim
+    stopReceiving();
+    openSendFromReq();
+    return;
+  }
   const r = recv.dec.add(text);
   if (r.status === 'foreign') { hint('foreign', true); return; }
   recv.lastValid = performance.now();
@@ -403,7 +440,9 @@ async function startCamera() {
   } catch { /* odak ayarı yok */ }
   return s;
 }
-async function startReceiving() {
+async function startReceiving(mode) {
+  recv.mode = mode === 'req' ? 'req' : 'data';
+  $('#v-recv').classList.toggle('mode-req', recv.mode === 'req');
   show('recv');
   recv.dec = new Q.Decoder();
   recv.active = true;
@@ -412,7 +451,7 @@ async function startReceiving() {
   $('#recv-bar').style.transform = 'scaleX(0)';
   $('#recv-pct').textContent = '%0';
   $('#recv-detail').textContent = t('waiting');
-  hint('aimHint');
+  hint(recv.mode === 'req' ? 'scanReqHint' : 'aimHint');
   keepAwake(true);
   const v = $('#cam');
   try {
@@ -436,6 +475,7 @@ async function startReceiving() {
   recv.hintTimer = setInterval(() => {
     if (!recv.active) return;
     const now = performance.now();
+    if (recv.mode === 'req') return;
     if (!recv.lastValid && now - started > 6000) hint('cantRead', true);
     else if (recv.lastValid && now - recv.lastValid > 4000) hint('stalled', true);
   }, 1000);
@@ -463,6 +503,7 @@ async function scanLoop(v) {
 }
 function stopReceiving() {
   recv.active = false;
+  $('#req').hidden = true;
   clearInterval(recv.hintTimer);
   if (recv.cam) { recv.cam.getTracks().forEach(tr => tr.stop()); recv.cam = null; }
   $('#cam').srcObject = null;
@@ -600,6 +641,9 @@ function init() {
   $('#chosen-clear').onclick = clearChoice;
   $('#send-text').addEventListener('input', e => chooseText(e.target.value));
   $('#start').onclick = () => startSending(false);
+  $('#start-scan').onclick = () => { if (send.packed) startReceiving('req'); };
+  // Kamera ekranındaki çarpı: gönderen kod okuturken gönderme hazırlığına, alırken ana sayfaya döner.
+  $('.recv-x').onclick = () => { if (recv.mode === 'req') show('setup', false); else goHome(); };
   $('#pause').onclick = () => {
     flow.paused = !flow.paused;
     $('#pause').textContent = t(flow.paused ? 'resume' : 'pause');
@@ -608,6 +652,8 @@ function init() {
   // Rol değişimi: kamerası uygun olan telefon alıcı olabilsin. / Swap roles in one tap.
   $('#swap-to-recv').onclick = () => { stopSending(); startReceiving(); toast(t('swappedRecv')); };
   $('#swap-to-send').onclick = () => { show('setup'); renderEstimate(); toast(t('swappedSend')); };
+  $('#show-req').onclick = () => showReq(true);
+  $('#req-done').onclick = () => { showReq(false); hint('aimHint'); };
 
   let installEvt = null;
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#install').hidden = false; });
@@ -623,6 +669,12 @@ function init() {
 
   renderItems();
   registerSW();
+
+  // Karşı telefon "bana gönder" kodunu normal kamerasıyla okuttuysa uygulama gönderme ekranında açılır.
+  if (location.hash === '#send') {
+    history.replaceState(null, '', location.pathname + location.search);
+    openSendFromReq();
+  }
 }
 
 init();

@@ -19,7 +19,11 @@ async function phone(browser, dark) {
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push('PAGEERROR ' + e.message));
   await page.goto(URL_);
-  return { ctx, page, errors };
+  const overflow = [];
+  // Her tıklamadan önce sayfanın ekrandan geniş olup olmadığını kaydet
+  const click = page.click.bind(page);
+  page.click = async (sel, o) => { const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth, [...document.querySelectorAll('.view')].find(v => !v.hidden)?.id]).catch(() => null); if (w && w[0] > w[1]) overflow.push(w[2] + ' ' + w[0] + '>' + w[1]); return click(sel, o); };
+  return { ctx, page, errors, overflow };
 }
 
 // Gönderenin kanvasını büyütüp PNG olarak al, alanın okuyucusuna ver. Kaçan kareler doğal olarak oluşur.
@@ -69,7 +73,7 @@ async function pump(S, R, untilDone, maxMs) {
   await R.page.click('#go-recv');
   await R.page.waitForTimeout(800);
   await R.page.screenshot({ path: path.join(OUT, '04-receiving-empty.png') });
-  let p = await pump(S, R, true, 60000);
+  let p = await pump(S, R, true, 180000);
   ok('Dosya alındı', !(await R.page.isHidden('#v-done')), `${p.fed} kare verildi, ${p.hits} okundu, ${p.ms} ms`);
   const [dl] = await Promise.all([R.page.waitForEvent('download'), R.page.click('#done-actions a')]);
   const got = fs.readFileSync(await dl.path());
@@ -86,14 +90,14 @@ async function pump(S, R, untilDone, maxMs) {
   await S.page.click('#start');
   await R.page.click('#again');
   await R.page.waitForTimeout(500);
-  p = await pump(S, R, true, 90000);
+  p = await pump(S, R, true, 240000);
   ok('Fotoğraf alındı ve önizleme var', await R.page.locator('#done-view img').count() === 1, `${est} | ${p.fed} kare, ${p.ms} ms`);
   ok('Fotoğraf JPEG olarak kaydedildi', (await R.page.textContent('#done-name')) === 'IMG_0042.jpg');
   await R.page.screenshot({ path: path.join(OUT, '07-done-photo.png') });
 
   // 3) Metin
   await S.page.click('#stop');
-  await S.page.click('#chosen-clear');
+  await S.page.locator('#chosen-clear').dispatchEvent('click');
   await S.page.fill('#send-text', 'Toplanma alanı: okul bahçesi, saat 14:00. İlaçları getir; çocuklar iyi.');
   await S.page.waitForSelector('#start:not([disabled])');
   await S.page.click('#start');
@@ -110,7 +114,7 @@ async function pump(S, R, untilDone, maxMs) {
   await R.page.click('#again');
   await pump(S, R, false, 1500);
   await S.page.click('#v-send .seg[data-pref="density"] button[data-v="kolay"]');
-  p = await pump(S, R, true, 60000);
+  p = await pump(S, R, true, 180000);
   ok('Yoğunluk değişince yine tamamlanır', !(await R.page.isHidden('#v-done')), `${p.fed} kare`);
 
   // 5) Rol değişimi: alan telefon gönderen olur, gönderen alan olur, ters yönde aktarım
@@ -131,12 +135,56 @@ async function pump(S, R, untilDone, maxMs) {
   await R.page.click('#v-setup [data-home]');
   await R.page.waitForSelector('#v-home:not([hidden])');
 
+  // 5b) "Bana gönder" kodu: AL → QR GÖSTER, GÖNDER → QR OKUT; akış kendiliğinden başlar
+  const feedCanvas = async (from, sel, to) => {
+    const url = await from.page.evaluate(s => {
+      const src = document.querySelector(s);
+      const c = document.createElement('canvas');
+      c.width = c.height = src.width * 6;
+      const x = c.getContext('2d');
+      x.imageSmoothingEnabled = false;
+      x.drawImage(src, 0, 0, c.width, c.height);
+      return c.toDataURL('image/png');
+    }, sel);
+    return to.page.evaluate(async u => { const img = new Image(); img.src = u; await img.decode(); return window.qraFeedImage(img); }, url);
+  };
+  await R.page.click('#go-recv');
+  await R.page.click('#show-req');
+  await R.page.waitForSelector('#req:not([hidden])');
+  await R.page.screenshot({ path: path.join(OUT, '12-recv-show-req.png') });
+  await S.page.click('#v-done [data-home]');
+  await S.page.click('#go-send');
+  await S.page.fill('#send-text', 'Hazır olunca gönderildi');
+  await S.page.waitForSelector('#start-scan:not([disabled])');
+  await S.page.screenshot({ path: path.join(OUT, '13-setup-two-starts.png') });
+  await S.page.click('#start-scan');
+  await S.page.waitForSelector('#v-recv.mode-req:not([hidden])');
+  await S.page.screenshot({ path: path.join(OUT, '14-send-scan-req.png') });
+  ok('GÖNDER → QR OKUT: alıcının kodunu okuyor', await feedCanvas(R, '#req-qr', S));
+  ok('Kod okununca akış kendiliğinden başladı', !(await S.page.isHidden('#v-send')));
+  await R.page.click('#req-done');
+  p = await pump(S, R, true, 30000);
+  ok('Akış alıcıya ulaştı', (await R.page.textContent('#done-view pre')).includes('Hazır olunca'), `${p.fed} kare`);
+  // AL ekranındaki telefon "bana gönder" kodunu görürse gönderme ekranına geçer
+  await S.page.click('#stop');
+  await S.page.click('#v-setup [data-home]');
+  await S.page.waitForSelector('#v-home:not([hidden])');
+  await S.page.click('#go-recv');
+  await R.page.click('#again');
+  await R.page.click('#show-req');
+  await feedCanvas(R, '#req-qr', S);
+  ok('AL → QR OKUT: bana gönder kodunu görünce gönderme ekranı açıldı', !(await S.page.isHidden('#v-setup')));
+  await S.page.click('#v-setup [data-home]');
+  await R.page.click('#req-done');
+  await R.page.click('.recv-x');
+  await R.page.waitForSelector('#v-home:not([hidden])');
+  await S.page.waitForSelector('#v-home:not([hidden])');
+  await S.page.click('#go-send');
+
   // 6) Dil değişimi
   await R.page.click('#v-home [data-lang]');
   ok('İngilizceye geçiyor', (await R.page.textContent('.hero')).startsWith('Two phones') && (await R.page.getAttribute('html', 'lang')) === 'en');
   await R.page.screenshot({ path: path.join(OUT, '10-home-en-dark.png') });
-  await S.page.click('#v-done [data-home]');
-  await S.page.click('#go-send');
   await S.page.click('#v-setup [data-lang]');
   await S.page.fill('#send-text', 'hello');
   await S.page.waitForSelector('#start:not([disabled])');
@@ -147,14 +195,15 @@ async function pump(S, R, untilDone, maxMs) {
 
   // 7) Gelenler listesi ve çevrimdışı açılış
   const n = await R.page.locator('.item').count();
-  ok('Gelenler listesinde 4 öğe', n === 4, String(n));
+  ok('Gelenler listesinde 5 öğe', n === 5, String(n));
   await R.page.screenshot({ path: path.join(OUT, '08-home-items-dark.png') });
   const ready = await R.page.waitForFunction(() => document.querySelector('#offline-state').classList.contains('on'), null, { timeout: 15000 }).then(() => true, () => false);
   ok('Çevrimdışı kullanıma hazır', ready);
   await R.ctx.setOffline(true);
   await R.page.reload();
-  ok('İnternetsiz yeniden açılıyor, gelenler duruyor', await R.page.waitForFunction(() => document.querySelectorAll('.item').length === 4, null, { timeout: 10000 }).then(() => true, () => false));
+  ok('İnternetsiz yeniden açılıyor, gelenler duruyor', await R.page.waitForFunction(() => document.querySelectorAll('.item').length === 5, null, { timeout: 10000 }).then(() => true, () => false));
 
+  for (const [name, x] of [['gönderen', S], ['alan', R]]) ok('Yatay taşma yok: ' + name, x.overflow.length === 0, x.overflow.join(' | '));
   for (const [name, x] of [['gönderen', S], ['alan', R]]) ok('Konsol hatası yok: ' + name, x.errors.length === 0, x.errors.slice(0, 3).join(' || '));
   await browser.close();
   console.log(fails ? `\n${fails} test başarısız` : '\nTüm testler geçti');

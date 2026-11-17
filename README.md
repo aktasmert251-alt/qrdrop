@@ -12,7 +12,14 @@ Send files, photos and text between two phones with **no network at all** — no
 2. Receiver taps **RECEIVE** and holds the camera 20–30 cm from the sending screen.
 3. At 100% the file is saved on the receiving phone; the sender taps **FINISH**.
 
-Either phone can switch roles at any time with **⇄ SWAP ROLES**, so whichever phone has the better camera can be the receiver.
+Both sides can **show** or **scan** a QR:
+
+| | SHOW QR | SCAN QR |
+|---|---|---|
+| **SEND** | Starts the code stream right away | Scans the receiver's “send to me” code; the stream starts automatically |
+| **RECEIVE** | Shows a “send to me” code (the other phone can also scan it with its normal camera to open QRDrop's send screen) | Reads the code stream with the camera |
+
+Either phone can also switch roles at any time with **⇄ SWAP ROLES**, so whichever phone has the better camera can be the receiver.
 
 Missed frames don't matter: the stream uses fountain (LT) coding, so the receiver can rebuild the file from any large enough set of frames, even if it starts late. The whole file is checked with CRC32.
 
@@ -43,6 +50,13 @@ Open the live address once while online and add it to the home screen (Android: 
 1. Gönderen **GÖNDER**'e basar, fotoğraf, dosya ya da metin seçer, **BAŞLAT**'a basar.
 2. Alan **AL**'a basar ve kamerasını gönderen ekrana 20–30 cm'den tutar.
 3. Çubuk %100 olunca dosya alan telefona kaydedilir; gönderen **BİTİR**'e basar.
+
+İki tarafta da hem **QR göster** hem **QR okut** seçeneği var:
+
+| | QR GÖSTER | QR OKUT |
+|---|---|---|
+| **GÖNDER** | Kod akışı hemen başlar | Alıcının “bana gönder” kodunu okutur; akış kendiliğinden başlar |
+| **AL** | “Bana gönder” kodu gösterir (karşı telefon normal kamerasıyla okutsa da QRDrop'un gönderme ekranı açılır) | Kamera kod akışını okur |
 
 İki telefon da **⇄ ROLÜ DEĞİŞ** ile istediği an rol değiştirebilir; kamerası iyi olan telefon alıcı olur.
 

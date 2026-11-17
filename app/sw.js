@@ -1,5 +1,5 @@
 /* QRDrop service worker: uygulamayı cihaza kaydeder, internetsiz açılmasını sağlar. / Caches the app for offline use. */
-const VERSION = 'qrdrop-v1';
+const VERSION = 'qrdrop-v2';
 const ASSETS = [
   './',
   'index.html',
