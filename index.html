@@ -124,6 +124,8 @@
   <div class="go">
     <p class="estimate" id="estimate"></p>
     <button class="btn btn-accent btn-wide btn-lg" id="start" type="button" data-i18n="start" disabled></button>
+    <button class="btn btn-wide btn-lg" id="start-scan" type="button" data-i18n="startScan" disabled></button>
+    <p class="note" data-i18n="startNote"></p>
   </div>
 </main>
 
@@ -163,7 +165,17 @@
     <div class="recv-line"><span id="recv-pct">%0</span><span id="recv-detail"></span></div>
     <div class="bar"><i id="recv-bar"></i></div>
     <p class="recv-hint" id="recv-hint"></p>
-    <button class="swap swap-dark" id="swap-to-send" type="button" data-i18n="swapToSend"></button>
+    <div class="recv-btns">
+      <button class="swap swap-dark swap-strong" id="show-req" type="button" data-i18n="showReq"></button>
+      <button class="swap swap-dark" id="swap-to-send" type="button" data-i18n="swapToSend"></button>
+    </div>
+  </div>
+  <div class="req" id="req" hidden>
+    <span class="req-tag" data-i18n="reqTag"></span>
+    <h2 class="req-title" data-i18n="reqTitle"></h2>
+    <div class="req-qr"><canvas id="req-qr" width="21" height="21" aria-label="QR"></canvas></div>
+    <p class="req-text" data-i18n="reqText"></p>
+    <button class="btn btn-ink btn-wide btn-lg" id="req-done" type="button" data-i18n="reqDone"></button>
   </div>
 </section>
 
